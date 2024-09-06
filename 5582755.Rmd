@@ -1,0 +1,646 @@
+---
+title: 'Business Statistics End of Term Assessment IB94X0 2023-2024'
+author: '5582755'
+output: html_document
+date: "2023-12-21"
+editor_options: 
+  chunk_output_type: console
+---
+
+This is to certify that the work I am submitting is my own. All external references and sources are clearly acknowledged and identified within the contents. I am aware of the University of Warwick regulation concerning plagiarism and collusion. 
+
+No substantial part(s) of the work  submitted  here has also been submitted by  me  in other assessments for accredited courses of study, and I acknowledge that if this has been done an appropriate reduction in the mark I might otherwise have received will be made.
+
+---
+## Tasks
+
+Question-1
+
+Effect on Bike Hire as a result of COVID restrictions. We have to perform regression analysis to examine the effects of three elements of the COVID response: Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out upon bike hire and effect of potential differences in the year, month, days of the week.
+
+Question-2 
+
+Effect of reviews of the books on their sale and effect of sale price upon number of sales across different genres and answer the two Questions.
+
+a) Effect of reviews on the sales of books.
+
+b) Effect of sale price upon the number of sales, and difference across genres.
+ 
+# Required Libraries
+
+```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+options(width=100)
+#install.packages("kableExtra")
+library(kableExtra) #for reported table
+#install.packages("emmeans")
+library(emmeans) #to find CI
+#install.packages("gridExtra")
+library(gridExtra) #for arrange graph
+#install.packages("grid")
+library(grid)
+install.packages("Hmisc")
+library(Hmisc)
+library(ggplot2)
+install.packages("car")
+library(car)
+```
+
+# Question 1
+
+This report is to analyze effect of Three COVID restrictions: Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out on number of bike hires in London.
+
+# Data Dictionary
+
+This data shows number of bike hires per day in London from 2010-07-30 to 2023-09-30 and COVID restrictions during that period. The variables of the data are described in table below
+
+Variable       | Description
+-------------- | ---------------------------------------------------------
+date | dates from 2010-07-30 to 2023-09-30
+hires | No of bikes hired on the day
+schools_closed | if the schools were closed on that day or not
+pubs_closed | if the pubs bwere closed or not
+shops_closed | if the shops were closed or open
+eating_places_closed | if the eating places were closed or not
+stay_at_home | if the stay at home ristriction was there
+household_mixing_indoors_banned | if individuals from different households were allowed for gathering or mixing indoors
+wfh | if work from home was implemented or not
+rule_of_6_indoors | if the indoor gatherings were limited to 6 people
+curfew | if there was curfew on the day
+eat_out_to_help_out | people were encouraged to dine out
+day | day of the week
+month | month of the year
+year | from year 2010 to 2023
+
+# Read Data
+
+```{r}
+#first we read data
+data_bikes <- read_csv("London_COVID_bikes.csv")
+
+#we select the three data columns of COVID restrictions: Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out scheme which we are interested in.
+Covidres_data <- data_bikes[, c("date", "Hires", "wfh", "rule_of_6_indoors", "eat_out_to_help_out", "day", "month", "year")]
+
+```
+
+# Data Quality Checks 
+
+```{r}
+#check data summary
+str(Covidres_data)
+
+#check for duplicates
+sum(duplicated(Covidres_data))
+
+#check for missing values
+sum(is.na(Covidres_data))
+
+# No missing values or duplicated data.
+```
+
+```{r}
+## Simple histogram showing the overall distribution and checking for outliers.
+ggplot(Covidres_data) + geom_histogram(aes(Hires), binwidth = 1000) + xlim(0, 80000)
+
+# The distribution density is normally distributed, without any extreme high values that could potentially be designated as outliers.
+```
+
+```{r}
+
+#We covert the month, year and day into facors.
+Covidres_data$year <- as.factor(Covidres_data$year)
+Covidres_data$month <- factor(Covidres_data$month, levels = c("Jan","Feb","Mar","Apr","Jun","Jul","Aug","Sep","Oct","Nov","Dec"))
+Covidres_data$day <- factor(Covidres_data$day, levels = c("Mon","Tue","Wed","Thu","Fri","Sat","Sun"))
+
+# we Check for how many time were these restrictions imposed within the given dataset from year 2010 - 2023
+count(Covidres_data, wfh)
+count(Covidres_data, rule_of_6_indoors)
+count(Covidres_data, eat_out_to_help_out)
+```
+
+#Visualise Number of Bike hires in London from year 2010 - 2023
+
+```{r}
+# Simple histogram showing the overall distribution of Bike Hires in London
+p.hires.distribution <- ggplot(Covidres_data,aes(x=Hires,..density..)) + 
+  geom_histogram(colour = "pink") + 
+  geom_density(col="red") + 
+  labs(caption = "Figure 1: Distribution of bike hires in london from 2010-2023")
+
+p.hires.distribution
+#data shows a normal distribution
+
+#Violin plot + Jitter Plot to show bike hires for each year
+hires_plot <- ggplot(data=Covidres_data, aes(x=year, y=Hires)) + 
+  geom_violin(trim=FALSE,fill= 'pink',alpha=0.8) + 
+  geom_jitter(size  = 0.7, alpha = 0.3,col="blue") + 
+  stat_summary(fun.data = mean_sdl,geom="pointrange",col="red",fun.args=list(mult=1)) + 
+  labs(title="Number of bike hires in London for each year",subtitle =" Error Bars show Standard Deviation",x="Year",y="Number of Bike Hires",caption = "Figure 2. Number of Bikes hired in London for each year")
+
+hires_plot
+
+#This plot shows the distribution of bike hires from year 2010-2023 along with the mean and standard deviation.
+
+```
+
+# We redusce the data size to years 2018 to 2023 to check the effect of COVID restrictions on bike rentals in London.
+Our target is to check the effect of covid restrictions on the bike hires so it will be better to cut the data to the years closer to COVID, therefore we just use the data from year 2018 to 2023. We can take 2018 at the reference year for our analysis.
+```{r}
+
+# To compare the effects of covid restrictions we filter the table with data from years 2019-2023
+covid_hires <- filter( Covidres_data, year %in% c(2018,2019,2020,2021,2022,2023))
+covid_hires <- tibble(covid_hires)
+str(covid_hires)
+```
+
+# Regression analysis to check the effects of the restrictions on hires.
+
+1.Perform t test.
+```{r}
+# t-test using the data from years 2018 - 2023 shows mean bike hires of 28810, t(2099) = 12.844, p<0.001
+t.test(covid_hires$Hires, mu = 26000)
+
+```
+
+2.Perform a two sample t-test to see if there is a significant difference in the average bike hires on the days with covid restrictions compared to those with no restrictions.
+
+```{r}
+# t-test shows that days with restriction of work from home significantly have less bike hires (27974) than those without restriction of work from home  (29719, t(2091) = 4.02, p<0.001), with a difference of 1745 bikes.
+t.test(Hires ~ wfh > 0,data = covid_hires)
+
+# t-test shows that days with restriction of rule of 6 indoors significantly have more bike hires (35731) than those without restriction of rule of 6 indoors (28478, t(104.77) = -7.153, p<0.001), with a difference of 7253 bikes.
+t.test(Hires ~ rule_of_6_indoors > 0,data = covid_hires)
+
+# t-test shows that days with restriction of eat out to help out significantly have more bike hires (36418) than those without restriction  (28707, t(28.527) = -5.7683, p<0.001), with a difference of 7711 bikes. 
+t.test(Hires ~ eat_out_to_help_out > 0,data = covid_hires)
+
+```
+
+3.Plot the value ratios separately for each year. This suggests that there were some significant changes, and the years of biggest change seem to be the years where restrictions have been enforced, so if we want to better understand the underlying cause we may want to examine how the three restrictions have impacted number of bikes hired in London.
+
+```{r}
+
+m.hire.by.year <- lm(Hires~wfh + rule_of_6_indoors + eat_out_to_help_out + year, data=covid_hires)
+summary(m.hire.by.year)
+
+# The intercept, wfh, rule_of_6_indoors, eat_out_to_help_out, and years 2020, 2021, and 2022 (p-value <0.05) are statistically significant (indicated by asterisks).The year 2019 and 2023 (p-value > 0.01), thus are not statistically significant.
+
+(  m.hire.by.year.emm <- emmeans(m.hire.by.year, ~year)  )
+(  plot.m.hire.by.year.emm <- ggplot(summary(m.hire.by.year.emm), aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point(col="black") + geom_linerange(col="black") + labs(caption = "Figure 3:Estimated Means of Bike Hires by Year",title = "Estimated Means of Bike Hires by Year",x="year", y="Number of Bike Hires", subtitle="Error bars are 95% CIs")   )
+
+#The estimated intercept is 28952.2, which represents the predicted value of Hires in year 2018. This intercept is significantly different from zero (p < 2e-16), suggesting a significant intercept term.the model is significant as F-statistic (p-value <0.001), suggesting that the year has a statistically significant association with the number of bike hires.
+```
+
+4.Plot the value ratios separately for each month. This suggests that there were some significant changes, and the months of biggest change seem to be the months where restrictions have been enforced, so if we want to better understand the underlying cause we may want to examine how the three restrictions have impacted number of bikes hired in London.
+
+```{r}
+
+m.cnt.by.month <- lm(Hires~wfh + rule_of_6_indoors + eat_out_to_help_out + month, data=covid_hires)
+
+(  m.cnt.by.month.emm <- emmeans(m.cnt.by.month, ~month)  )
+(  plot.m.cnt.by.month.emm <- ggplot(summary(m.cnt.by.month.emm), aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point(col="magenta") + geom_linerange(col="magenta") + labs(caption = "Figure 4: Estimated Means of Bike Hires by Month ",title = "Estimated Means of Bike Hires by Month",x="Month", y="Number of Bike Hires", subtitle="Error bars are 95% CIs")   )
+
+# Interpreting the individual coefficients
+summary(m.cnt.by.month)
+
+```
+
+5.Pearson Correlation Matrix
+
+All p-values are very small (<0.001), indicating that the correlations are statistically significant.
+
+```{r}
+rcorr(as.matrix(select(covid_hires, Hires, wfh, rule_of_6_indoors, eat_out_to_help_out)))
+```
+Correlation Matrix shows: The correlation coefficient is -0.09, is indicating a weak negative correlation between the number of hires and the prevalence of working from home.The correlation coefficient is 0.15, suggesting a weak positive correlation between the number of hires and adherence to the rule_of_6_indoors.The correlation coefficient is -0.12, suggesting a weak negative correlation between working from home and participation in the eat_out_to_help_out scheme.The correlation coefficient is -0.03, indicating a very weak negative correlation between adherence to the rule_of_6_indoors and participation in the eat_out_to_help_out scheme.
+
+6. Linear regression models to test the relation of restrictions with bike hires in London.
+```{r}
+
+#model1
+m.hire.by.wfh <- lm(Hires ~ wfh, data=covid_hires)
+m.hire.by.wfh.emm <- emmeans(m.hire.by.wfh, ~wfh)
+summary(m.hire.by.wfh.emm)
+#The mean bike hires with the restriction of work from home is 27974, 95% CI[27382--28567] bikes. The mean bike  hires without the restriction of work from home is 29719 bikes, 95% CI[29101--30337] minutes. 
+(  m.hire.by.wfh.contrast <- confint(pairs(m.hire.by.wfh.emm))  )
+# The mean difference between the number of bike hired without restriction of work from home to with restriction is 1745bikes, 95% CI[889--2601].
+```
+
+```{r}
+#model2
+m.hires.by.ruleof6 <- lm(Hires ~ rule_of_6_indoors, data=covid_hires)
+m.hires.by.ruleof6.emm <- emmeans(m.hires.by.ruleof6, ~rule_of_6_indoors)
+summary(m.hires.by.ruleof6.emm)
+#The mean bike hires with the restriction of rule of 6 indoors is 35731, 95% CI[33747--37715] bikes. The mean bike hires without the restriction of rule of 6 indoors is 28478 bikes, 95% CI[28044--28913] minutes. 
+(  m.hire.by.rule6.contrast <- confint(pairs(m.hires.by.ruleof6.emm))  )
+# The mean difference between the number of bike hired without restriction of rule of 6 indoors to with restriction is -7253 bikes, 95% CI[-9284 -- -5222].
+```
+
+```{r}
+#model3
+m.hires.by.eatout <- lm(Hires ~ eat_out_to_help_out, data=covid_hires)
+m.hires.by.eatout.emm <- emmeans(m.hires.by.eatout, ~eat_out_to_help_out)
+summary(m.hires.by.eatout.emm)
+#The mean bike hires with the restriction of eat out to help out is 35731, 95% CI[33747--37715] bikes. The mean bike hires without the restriction of eat_out_to_help_out is 28478 bikes, 95% CI[28044--28913] minutes. 
+(  m.hires.by.eatout.contrast <- confint(pairs(m.hires.by.eatout.emm))  )
+# The mean difference between the number of bike hired without restriction of eat_out_to_help_out to with restriction is -7253 bikes, 95% CI[-9284 -- -5222].
+```
+
+```{r}
+#model4 (Interaction between the restrictions)
+m.hires.by.intr <- lm(Hires ~ eat_out_to_help_out*wfh*rule_of_6_indoors , data=covid_hires)
+summary(m.hires.by.intr)
+cbind(coef(m.hires.by.intr), confint(m.hires.by.intr))
+# This shows that the interaction between the restrictions is statistically not significant.
+```
+
+```{r}
+
+#model5
+m.hires.by.all <- lm(Hires ~ eat_out_to_help_out + rule_of_6_indoors + wfh, data=covid_hires)
+summary(m.hires.by.all)
+cbind(coef(m.hires.by.all), confint(m.hires.by.all))
+vif(m.hires.by.all)
+# VIF around 1 suggests a low level of multicollinearity, indicating that this variable does not have strong correlations with the other predictors and thus this is a good model for our analysis.
+```
+
+Intercept (29459.8) which represents the expected number of bike hires without any COVID restrictions.
+For eat out to help out rule t- value is 3.697 (p-value <0.001) is highly significant, indicates the effect of increasing the eat out to help out rule variable by one unit will increase estimated number of bike hires by 6959 units.
+For Rule of 6 indoors rule t- value is 7.911 (p-value <0.001) is highly significant, indicates the effect of increasing the Rule of 6 indoors rule variable by one unit will increase estimated number of bike hires by 8241 units.
+For Work from home t- value is -4.898 (p-value <0.001) is highly significant indicates the effect of increasing the work from home rule variable by one unit will decrease estimated number of bike hires by 2148 units.
+
+```{r}
+# We use ANOVA to perform a direct model comparison which is often the best approach to compare nested models: a simpler model with a more complex version to find the model which best suits our analysis.
+
+anova(m.hires.by.intr, m.hire.by.wfh, m.hires.by.ruleof6, m.hires.by.eatout, m.hires.by.all)
+# A higher F-statistic suggests that the model is providing a better fit to the data. The associated p-value helps you determine whether the observed F-statistic is statistically significant. From our anova table we can see that Model 5 : Hires ~ eat_out_to_help_out + rule_of_6_indoors + wfh has the highest F Statistic (37.776) (p-value <0.001) which makes it a good fit for our data.
+
+# we contrast the impact of the longest imposed covid restriction and pre and post covid bike hires.
+m.hires.con <- aov(Hires ~ year+wfh, data=covid_hires)
+m.hires.con.emm <- emmeans(m.hires.con, ~year+wfh)
+m.hires.con.emm
+
+(  contrasts <- data.frame(covid.after.effect=c(0,0,1,-1/2,-1/2,0,0,0,1,-1/2,-1/2,0 ), 
+                           covid.before.effect=c( -1/2,-1/2,1,0,0,0,-1/2,-1/2,1,0,0,0))  )
+
+contrast(m.hires.con.emm, contrasts)
+confint(contrast(m.hires.con.emm, contrasts))
+```
+There is a decrease in bike hires from 2020 to 2022 (immediately before and after the work from home restriction) by 6000 bike less 95% CI[-8362 -- -3402].
+Whereas the number of bike hires before the work from hone restriction were 5736 more 95% CI [2644 -- 8827]
+This shows that the restriction of work from home has negetively impacted the number of bikes rented and we still haven't reach the pre covid levels.
+
+
+7.Visualsation of the three restrictions to check the effect on bike hires yearly, monthly and weekly.
+
+```{r}
+covid_hires <- covid_hires %>%
+  mutate(
+    Covid = case_when(
+      wfh == 1 ~ "WFH",
+      rule_of_6_indoors == 1 ~ "Rule of 6 Indoors",
+      eat_out_to_help_out == 1 ~ "Eat Out to Help Out",
+      TRUE ~ "No COVID"
+    )
+  )
+#year
+m.Hires.by.year.and.Covidres <- glm(Hires~year * Covid, data=covid_hires)
+summary(m.Hires.by.year.and.Covidres)
+
+( m.Hires.by.year.and.Covidres.emm <- emmeans(m.Hires.by.year.and.Covidres, ~year + Covid)  )
+
+ggplot(summary(m.Hires.by.year.and.Covidres.emm), aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(Caption = "Figure 5:Bike Hire Trends Over Years with Covid Restrictions ",title = "Bike Hire Trends Over Years with Covid Restrictions", x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+
+## The graph shows how the three restrictions effected the bike hires with different year.
+
+#months
+m.Hires.by.month.and.Covidres <- glm(Hires~month * Covid, data=covid_hires)
+summary(m.Hires.by.month.and.Covidres)
+
+( m.Hires.by.month.and.Covidres.emm <- emmeans(m.Hires.by.month.and.Covidres, ~month + Covid)  )
+
+ggplot(summary(m.Hires.by.month.and.Covidres.emm), aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(caption = "Figure 6: Bike Hire Trends Over different Months with Covid Restrictions ",title = "Bike Hire Trends Over different Months with Covid Restrictions",x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+
+# The graph shows how the three restrictions effected the bike hires in different months.
+
+#day
+m.Hires.by.day.and.Covidres <- glm(Hires~day * Covid, data=covid_hires)
+summary(m.Hires.by.day.and.Covidres)
+
+( m.Hires.by.day.and.Covidres.emm <- emmeans(m.Hires.by.day.and.Covidres, ~day + Covid)  )
+
+ggplot(summary(m.Hires.by.day.and.Covidres.emm), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(caption = "Figure 7: Bike Hire Trends Over different days of week with Covid Restrictions",title = "Bike Hire Trends Over different days of week with Covid Restrictions",x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+
+## The graph shows how the three restrictions effected the bike hires with different days of the week.
+```
+
+We can see the from the overall in terms of statistical tests and plots that there is a difference in pattern of bike hires across months with COVID restrictions and without. Showing that work from home had major impact on the number of bike hires which is because it is the longest imposed COVID restriction, showing that for the months from January to June number of bike hires were almost same with and without the restriction, whereas for the months from July to December bike hires were more when there were no restrictions.
+
+# Report for London bike hires and covid restrictions
+This report analyzes the impact of three COVID-19 restrictions—Work From Home (WFH), Rule of 6 Indoors, and Eat Out to Help Out—on the number of bike hires in London. The data set spans from 2010-07-30 to 2023-09-30, providing daily counts of bike hires along with information on various COVID restrictions.We read the data, check for duplicates, and verify that there are no missing values. The data summary and histogram indicate a normally distributed density without outliers.
+
+We observed that Work From Home is the longest imposed COVID restriction and thus it will have a major impact on our findings about the bike hires in London among the three restrictions that we are considering.
+
+Visualizations include a histogram of overall bike hires, a violin plot showing yearly distribution with jitter points, and a summary of hire distribution for each year.
+
+```{r setup8,echo=FALSE, warning=FALSE}
+hires_plot
+```
+
+We focus on the years 2018 to 2023 to analyze the effect of COVID restrictions on bike hires. T-tests and linear regression models are performed, showing significant differences in hires with and without specific restrictions.
+
+ANOVA is used to compare nested models, with Model including all the restrictions (Hires ~ eat_out_to_help_out + rule_of_6_indoors + wfh) identified as the best fit with f- measure 37.776 (p-value < 2.2e-16). 
+
+The plots below shows the effect of the three COVID restrictions on bike hires yearly from 2018- 2023(data only till September for the year 2023), monthly, and weekly, highlighting differences in trends.
+
+```{r setup7, echo=FALSE, warning=FALSE}
+
+ggplot(summary(m.Hires.by.year.and.Covidres.emm), aes(x=year, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(Caption = "Figure 5:Bike Hire Trends Over Years with Covid Restrictions ",title = "Bike Hire Trends Over Years with Covid Restrictions", x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+
+## The graph shows how the three restrictions effected the bike hires with different year.
+
+```
+
+According to the graph the reasn for higher bike hires in year 2020 was due to the covid restrictions imposed.
+
+```{r setup6, echo=FALSE, warning=FALSE}
+
+ggplot(summary(m.Hires.by.month.and.Covidres.emm), aes(x=month, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(caption = "Figure 6: Bike Hire Trends Over different Months with Covid Restrictions ",title = "Bike Hire Trends Over different Months with Covid Restrictions",x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+
+# The graph shows how the three restrictions effected the bike hires in different months.
+```
+
+Monthly data shows that work from home has impacted the hires of the bikes in London in a negetive way where as rule of 6 indoors and eat out to help out scheme had impacted in a positive way, increasing the number of bike hires.
+
+```{r setup5, echo=FALSE, warning=FALSE}
+#day
+
+ggplot(summary(m.Hires.by.day.and.Covidres.emm), aes(x=day, y=emmean, ymin=lower.CL, ymax=upper.CL, col=Covid)) + geom_point() + geom_linerange(alpha=0.5) + labs(caption = "Figure 7: Bike Hire Trends Over different days of week with Covid Restrictions",title = "Bike Hire Trends Over different days of week with Covid Restrictions",x="Month", y="Number of Bike Hires", col="Covid Restrictions", subtitle="Error bars are 95% CIs")
+```
+
+We can see that on the weekends the number of bikes hired are more for all the three restrictions which could be due to obvious reasons. 
+
+On contrasting the Pre Covid and Post Covid time  we found out that there is a decrease in bike hires from 2020 to 2022 (immediately before and after the work from home restriction) by 6000 bike less 95% CI[-8362 -- -3402].
+Whereas the number of bike hires before the work from hone restriction were 5736 more 95% CI [2644 -- 8827]
+This shows that the restriction of work from home has negetively impacted the number of bikes rented and we still haven't reach the pre covid levels. 
+
+The analysis reveals significant associations between COVID restrictions and bike hires in London. Work From Home, Rule of 6 Indoors, and Eat Out to Help Out show varying impacts, with detailed insights into monthly and yearly patterns.Work from home reduced commuting-related cycling, while Rule of 6 Indoors and Eat Out to Help Out boosted leisure cycling. Further investigation into specific months and days with the most significant changes in bike hires may provide deeper insights. Consideration of additional factors such as weather conditions could enhance the analysis.
+
+
+
+## Question 2 – Book Sales
+Effect of of reviews on the sales of the book and effect on the sales on the price of books across different gernes.
+
+## Data Dictionary
+
+This data provides information on the sales of e-book over a period of many months. where each line of data represents one book.
+
+Variable       | Description
+-------------- | ---------------------------------------------------------
+sold by | publisher that sold the e-book
+publisher.type | publisher type
+genre | genre of the book
+avg.review | average of the reviews for the book
+daily.sales | average number of sales (minus refunds) across all days in the period 
+total.reviews | tatal reviews for the book
+sale.price | average price for which the book sold in the period
+
+# Read Data
+
+```{r}
+#read data
+sales_data <- read_csv("publisher_sales.csv")
+
+```
+
+# Data Quality Check
+
+```{r}
+#check data summary
+str(sales_data)
+
+#check for duplicates
+sum(duplicated(sales_data))
+
+#check for missing values
+sum(is.na(sales_data))
+
+```
+
+# Data Visualisation
+
+```{r}
+#check data summary
+str(sales_data)
+
+#check for duplicates
+sum(duplicated(sales_data))
+
+#check for missing values
+sum(is.na(sales_data))
+
+sum(sales_data$total.reviews ==0)
+sum(sales_data$avg.review ==0)
+
+#Most of the distribution density is normally distributed, without any high values that could potentially be designated as outliers. 
+#Simple histogram showing the overall distribution and checking for outliers.
+p.sales.distribution <- ggplot(sales_data,aes(x= daily.sales,..density..)) + 
+  geom_histogram(colour = "black") + 
+  geom_density(col="red") + 
+  labs(caption = "Figure 8: Book Sales")
+
+p.sales.distribution
+
+```
+
+# Effect of reviews on the daily sales of the e-book
+Books with higher average review scores tend to have higher sales. There is a positive correlation between average review score and daily sales.
+The relationship between sales and total reviews is less clear. There is no consistent pattern across different review scores.
+
+1. visual representation of relation between the total reviews and average reviews.
+
+```{r}
+
+sales_totalrev_plot <- ggplot(data=sales_data, aes(x=total.reviews, y=daily.sales)) + 
+  geom_jitter(col= 'pink',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books acoording to their total reviews",x="Total Reviews",y="Daily Sales",caption = "Figure 9: Daily sales of the books to their total reviews")
+sales_totalrev_plot
+#the plot shows a positive correlation between total reviews and daily sales.
+
+
+sales_avgrev_plot <- ggplot(data=sales_data, aes(x=avg.review, y=daily.sales)) + 
+  geom_jitter(col= 'magenta',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books acoording to their average reviews",x="Average Reviews",y="Daily Sales",caption = "Figure 10: Daily sales of the books to their average reviews")
+sales_avgrev_plot
+#the plot shows very weak to no relation between the average reviews and daily sales.
+
+```
+
+2. Perform regression analysis to find the best odel to explain the effect on daily sales with respect to tatal reviews and average reviews.
+```{r}
+
+model_avgrev <- lm(daily.sales ~ avg.review, sales_data)
+summary(model_avgrev)
+# The t(5998)= -1.544, p = 0.123. The p-value for the average review coefficient is 0.123, which is greater than the commonly used significance level of 0.05.The average review may not be a statistically significant predictor of daily sales in this model.
+
+model_totalrev<- lm(daily.sales ~ total.reviews, sales_data)
+summary(model_totalrev)
+# The t(5998)= 67.97,p-value < 0.001. The p-value for the total review coefficient is highly significant.The total reviews are a statistically significant predictor of daily sales in this model.
+
+model_rev <- lm(daily.sales ~ avg.review + total.reviews, data = sales_data)
+summary(model_rev)
+# The p-value < 0.001 for both the indicators in this model making them statistically significant and making this model a good fit for our data. 
+
+correlation_matrix <- cor(sales_data[c("daily.sales", "avg.review","total.reviews")])
+correlation_matrix
+# This shows a strong correlation between total reviews and daily sales, and a weak correlation between the average reviews and daily sales.
+# Also there is a weak correlation between total reviews and average reviews, therefore we will not face the problem of multicollinearity in the model as the dependent variables are not correlated.
+
+model_intr_rev <- lm(daily.sales ~ avg.review * total.reviews, sales_data )
+summary(model_intr_rev)
+# The p-value < 0.001 for both the indicators in this model making them statistically significant and making this model a better fit for our data. 
+```
+
+3.Choosing which model is better for our data.
+```{r}
+#Choosing which model is better for our data.
+model <- lm(daily.sales ~ 1, sales_data)
+anova(model, model_intr_rev, model_totalrev, model_rev)
+## Anova table shows that all the models are statistically significant (p-value<0.001) except model 4 (daily.sales ~ total.reviews). Model 2 (daily.sales ~ avg.review * total.reviews) and Model 3 (daily.sales ~ avg.review) have highest f- statistic score of (1669.24) and (2501.67) respectively.
+
+#the ANOVA table provides strong evidence that both avg.review and total.reviews, as well as their interaction, have a significant impact on daily.sales. The model is statistically significant overall.
+
+```
+
+
+# Effect of different genres and sale price on the daily sales of the e-book
+Checking how different genres and sale price of the books have an impact on the daily sales of the books.
+
+```{r}
+sales_data$genre <- as.factor(sales_data$genre)
+levels(sales_data$genre)
+
+model_genre <- lm(daily.sales ~ genre, sales_data)
+summary(model_genre)
+cbind(coef(model_genre), confint(model_genre))
+# The intercept shows the daily price for adult fiction [82.55] 95% CI [81.57275 -- 83.52694], For every one unit increase in non fiction books, daily sales is dropped by 19 units 95% CI [-20.42 -- -17.66] and for every one unit increase in young adult fiction boks, daily sales is increased by 30.51 units 95% CI [29.13 -- 31.89]
+
+model_sale <- lm(daily.sales ~ sale.price, sales_data)
+summary(model_sale)
+cbind(coef(model_sale), confint(model_sale))
+#For one unit increase in sale price, daily sales is dropped by 4 units 95% CI [-4.14 -- -3.80] 
+```
+
+```{r}
+sales_genre_plot <- ggplot(data=sales_data, aes(x=genre, y=daily.sales)) + 
+  geom_violin(trim=FALSE,fill= 'pink',alpha=0.5) + 
+  stat_summary(fun.data = mean_sdl,geom="pointrange",col="blue",fun.args=list(mult=1)) + 
+  labs(title="Daily sales of the books for different genre",subtitle =" Error Bars are Standard Deviation",x="Genre",y="Daily Sales",caption = "Figure 11. Daily sales of the books for different genre")
+sales_genre_plot
+# The plot show that the mean of daily sales is highes for young adult fiction.
+
+saleprice_dailysales_plot <- ggplot(data=sales_data, aes(x=sale.price, y=daily.sales)) + 
+  geom_jitter(col= 'pink',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books acoording to their sale price",x="Sale Price",y="Daily Sales",caption = "Figure 12: Daily sales of the books with their Sale Price")
+saleprice_dailysales_plot
+#The plot does not show a very clear relation between sale price and daily sale, but we can infer that as the sale price increase daily sales tend to drop.
+
+saleprice_dailysales_plot_genre <- ggplot(data=sales_data, aes(x=sale.price, y=daily.sales)) + facet_wrap(~genre)+
+  geom_jitter(col= 'violet',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books according to there genres with their Sale Price",x="Sale Price",y="Daily Sales",caption = "Figure 13: Daily sales of the books according to there genres with their Sale Price")
+saleprice_dailysales_plot_genre
+#The plot shows the effect of sales price of different genres on the daily sales.
+# we can see that adult fiction has a constant relation till the sales price of 10 and then there is a negative correlation between daily sales and sale price as it increases, for non fiction sales price have no to very weak impact on the daily sales, and for young adult fiction sale price has a strong negative correlation with daily sales.
+
+```
+
+```{r}
+m.sales.by.genre <- lm(daily.sales~ sale.price + genre, data=sales_data)
+summary(m.sales.by.genre)
+# The intercept shows the daily price for adult fiction [93.95],for every one unit increase in the sale price, daily sales is dropped by 1.43, For every one unit increase in non fiction books, daily sales is dropped by 9.02 units and for every one unit increase in young adult fiction books, daily sales is increased by 30.47 units. 
+
+anova( model,model_sale, m.sales.by.genre, model_genre)
+# Anova table shows that all the models are statistically significant (p-value<0.001) but model 2 (daily.sales ~ sale.price) and model 3 (daily.sales ~ sale.price + genre) both have a very high f-statistic of (2893.78) and (1160.42) respectively.
+
+#plotting our findings.
+( m.sales.by.genre.emm <- emmeans(m.sales.by.genre, ~sale.price + genre)  )
+
+ggplot(summary(m.sales.by.genre.emm), aes(x=genre, y=emmean, ymin=lower.CL, ymax=upper.CL, col=genre)) + geom_point() + geom_linerange(alpha=0.5) + labs(title=" Estimated mean of daily sales of books for genre",x="genre", y="Daily Sales", col="Genre", subtitle="Error bars are 95% CIs", caption = "Figure 14: Estimated mean of daily sales of books for genre")
+
+```
+
+
+# Report on Daily Sales of e-book
+
+This report presents the results of the analyses requested by the company. The data provides information on e-books sales over a period of time containing 6000 observations.The analysis focuses on exploring the impact of various factors on e-book sales over several months. The key variables of interest are the average review scores, total reviews, genre, and sale prices.
+
+Upon loading the data set, it was subjected to a comprehensive data quality check. The data set contains information on the publisher, publisher type, genre, average review, daily sales, total reviews, and sale price for each book. No duplicates were found, and missing values were minimal.
+
+A jitter plot was utilized to visually assess the distribution of daily sales. The distribution appeared approximately normal, and a histogram with a density plot provided additional insights into the overall sales pattern.
+
+Books with higher Total review scores exhibit a positive correlation with daily sales. Regression analysis indicated that total reviews significantly predict daily sales, whereas the relationship with average reviews was less conclusive.
+
+```{r setup3, echo=FALSE, warning=FALSE, message=FALSE}
+sales_totalrev_plot <- ggplot(data=sales_data, aes(x=total.reviews, y=daily.sales)) + 
+  geom_jitter(col= 'pink',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books acoording to their total reviews",x="Total Reviews",y="Daily Sales",caption = "Figure 9: Daily sales of the books to their total reviews")
+sales_totalrev_plot
+
+```
+
+It can be seen that there a positive correlation between the books with higher total reviews with dail sales.
+
+```{r setup2, echo=FALSE, warning=FALSE, message=FALSE}
+sales_avgrev_plot <- ggplot(data=sales_data, aes(x=avg.review, y=daily.sales)) + 
+  geom_jitter(col= 'magenta',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books acoording to their average reviews",x="Average Reviews",y="Daily Sales",caption = "Figure 10: Daily sales of the books to their average reviews")
+sales_avgrev_plot 
+
+```
+
+This shows that the correlation between average reviews and daily sales is very weak.
+
+A regression model incorporating both average and total reviews, along with their interaction, emerged as the most suitable with F-statistic:  2371 on 2 and 5997 Degrees of Freedom,  p-value: < 2.2e-16.
+
+Regression models were compared using ANOVA table, highlighting the superiority of the model incorporating both average and total reviews along with their interaction.The selected model demonstrated statistical significance and accounted for a significant proportion of the variance in daily sales. F- Statistic 1669.240, p-value < 2.2e-16.
+
+I then looked at how differences in book genres demonstrated varying effects on daily sales. 
+
+```{r setup1, echo=FALSE, warning=FALSE}
+ggplot(summary(m.sales.by.genre.emm), aes(x=genre, y=emmean, ymin=lower.CL, ymax=upper.CL, col=genre)) + geom_point() + geom_linerange(alpha=0.5) + labs(title=" Estimated mean of daily sales of books for genre",x="genre", y="Daily Sales", col="Genre", subtitle="Error bars are 95% CIs", caption = "Figure 14: Estimated mean of daily sales of books for genre")
+```
+
+Where I found that Young adult fiction had the most substantial impact, leading to increased daily sales. Then the adult fiction and non fictional books had least impact on the daily sales of e-book.
+
+Also I looked at the effect of sale price of different genre on the daily sales of e-book
+
+```{r setup, echo=FALSE, warning=FALSE}
+saleprice_dailysales_plot_genre <- ggplot(data=sales_data, aes(x=sale.price, y=daily.sales)) + facet_wrap(~genre)+
+  geom_jitter(col= 'violet',alpha=0.7)  + geom_smooth()+
+  labs(title="Daily sales of the books according to there genres with their Sale Price",x="Sale Price",y="Daily Sales",caption = "Figure 13: Daily sales of the books according to there genres with their Sale Price")
+saleprice_dailysales_plot_genre
+```
+
+This shows that adult fiction has a constant relation till the sales price of 10 and then there is a negative correlation between daily sales and sale price as it increases, for non fiction sales price have no to very weak impact on the daily sales, and for young adult fiction sale price has a strong negative correlation with daily sales.
+
+Sale prices displayed a negative relationship with daily sales. A higher sale price was associated with decreased daily sales. For one unit increase in sale price, daily sales is dropped by 4 units 95% CI [-4.14 -- -3.80].
+
+The analysis reveals that both reviews and genres significantly influence daily sales of e-books. Young adult fiction and lower sale prices contribute positively to sales. Recommendations for publishers could involve strategies to encourage positive reviews, particularly for genres with higher sales potential. Continuous monitoring and adaptation of pricing strategies may optimize daily sales.
+
+Limitations and Future Work:
+The analysis assumes linearity and normality in the relationships, and the results are based on correlational findings. Future work could involve exploring additional variables, investigating temporal trends, and employing advanced modeling techniques for a more nuanced understanding.
+
+
+
+## References
+
+1.R for Data Science (https://r4ds.had.co.nz)
+
+2.G. Cumming. 'The New Statistics: Why and How',https://journals.sagepub.com/doi/10.1177/0956797613504966
+
+3.https://data.london.gov.uk/dataset/number-bicycle-hires
+
+4.https://data.london.gov.uk/dataset/covid-19-restrictions-timeseries
+
+
