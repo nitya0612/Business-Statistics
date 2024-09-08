@@ -1,6 +1,6 @@
 ---
 title: 'Business Statistics End of Term Assessment IB94X0 2023-2024'
-author: '5582755'
+author: 'Nitya Gupta'
 output: html_document
 date: "2023-12-21"
 editor_options: 
